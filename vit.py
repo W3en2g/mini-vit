@@ -54,3 +54,27 @@ class MultiHeadSelfAttention(nn.Module):
         x = x.transpose(1, 2).reshape(B, N, C)            # (B, N, C)
         x = self.proj(x)
         return x
+
+
+class TransformerBlock(nn.Module):
+    """Single transformer encoder block: LN → MHSA → residual + LN → MLP → residual."""
+
+    def __init__(self, embed_dim: int = 768, num_heads: int = 12,
+                 mlp_ratio: float = 4.0, dropout: float = 0.0):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.attn = MultiHeadSelfAttention(embed_dim, num_heads, dropout)
+        self.norm2 = nn.LayerNorm(embed_dim)
+        mlp_hidden = int(embed_dim * mlp_ratio)
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, mlp_hidden),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(mlp_hidden, embed_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.attn(self.norm1(x))   # attention sub-layer with residual
+        x = x + self.mlp(self.norm2(x))    # MLP sub-layer with residual
+        return x
