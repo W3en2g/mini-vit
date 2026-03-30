@@ -78,3 +78,74 @@ class TransformerBlock(nn.Module):
         x = x + self.attn(self.norm1(x))   # attention sub-layer with residual
         x = x + self.mlp(self.norm2(x))    # MLP sub-layer with residual
         return x
+
+
+class VisionTransformer(nn.Module):
+    """Vision Transformer (ViT): patch embed + class token + pos encoding + transformer blocks + head."""
+
+    def __init__(self, image_size: int = 224, patch_size: int = 16,
+                 in_channels: int = 3, num_classes: int = 10,
+                 embed_dim: int = 768, num_heads: int = 12,
+                 num_layers: int = 6, mlp_ratio: float = 4.0,
+                 dropout: float = 0.0):
+        super().__init__()
+        self.patch_embed = PatchEmbedding(image_size, patch_size, in_channels, embed_dim)
+        num_patches = self.patch_embed.num_patches
+
+        # Learnable [CLS] token and positional encoding (num_patches + 1 for CLS)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
+        self.pos_drop = nn.Dropout(dropout)
+
+        self.blocks = nn.Sequential(*[
+            TransformerBlock(embed_dim, num_heads, mlp_ratio, dropout)
+            for _ in range(num_layers)
+        ])
+        self.norm = nn.LayerNorm(embed_dim)
+        self.head = nn.Linear(embed_dim, num_classes)
+
+        # Weight initialisation
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m: nn.Module):
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=0.02)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B = x.shape[0]
+        x = self.patch_embed(x)                            # (B, num_patches, embed_dim)
+
+        cls = self.cls_token.expand(B, -1, -1)             # (B, 1, embed_dim)
+        x = torch.cat([cls, x], dim=1)                     # (B, num_patches+1, embed_dim)
+        x = self.pos_drop(x + self.pos_embed)
+
+        x = self.blocks(x)                                  # (B, num_patches+1, embed_dim)
+        x = self.norm(x)
+        x = x[:, 0]                                         # extract CLS token → (B, embed_dim)
+        x = self.head(x)                                    # (B, num_classes)
+        return x
+
+
+def main():
+    torch.manual_seed(42)
+    model = VisionTransformer(
+        image_size=224, patch_size=16, in_channels=3,
+        num_classes=10, embed_dim=768, num_heads=12,
+        num_layers=6, mlp_ratio=4
+    )
+    model.eval()
+    dummy = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        out = model(dummy)
+    print(f"Output shape: {out.shape}")
+
+
+if __name__ == "__main__":
+    main()
