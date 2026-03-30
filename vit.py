@@ -141,10 +141,38 @@ def main():
         num_layers=6, mlp_ratio=4
     )
     model.eval()
+
+    total_params = sum(p.numel() for p in model.parameters())
+
+    print("Mini Vision Transformer")
+    print("=======================")
+    print(f"Config : image_size=224, patch_size=16, embed_dim=768")
+    print(f"         num_heads=12, num_layers=6, num_classes=10")
+    print(f"Total parameters: {total_params:,}")
+    print()
+
     dummy = torch.randn(1, 3, 224, 224)
+    print("Forward pass:")
+    print(f"  Input:            {tuple(dummy.shape)}")
+
     with torch.no_grad():
-        out = model(dummy)
-    print(f"Output shape: {out.shape}")
+        x = model.patch_embed(dummy)
+        print(f"  After patches:    {tuple(x.shape)}")
+
+        cls = model.cls_token.expand(1, -1, -1)
+        x = torch.cat([cls, x], dim=1)
+        x = model.pos_drop(x + model.pos_embed)
+        print(f"  After CLS + pos:  {tuple(x.shape)}")
+
+        x = model.blocks(x)
+        x = model.norm(x)
+        print(f"  After blocks:     {tuple(x.shape)}")
+
+        x = model.head(x[:, 0])
+        print(f"  Output (logits):  {tuple(x.shape)}")
+
+    print()
+    print("✓ Forward pass successful!")
 
 
 if __name__ == "__main__":
